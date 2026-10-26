@@ -42,12 +42,11 @@ workflows:
           # Kotlin/Native release linking runs in the Gradle daemon and needs much more.
           mkdir -p ~/.gradle
           cat > ~/.gradle/gradle.properties <<'EOP'
-          org.gradle.jvmargs=-Xmx6656M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC
-          kotlin.daemon.jvmargs=-Xmx1024M
-          kotlin.native.jvmArgs=-Xmx6656M
+          org.gradle.jvmargs=-Xmx10240M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC
+          kotlin.daemon.jvmargs=-Xmx512M
+          kotlin.native.jvmArgs=-Xmx10240M
           org.gradle.workers.max=2
           org.gradle.parallel=false
-          kotlin.native.cacheKind=none
           EOP
           sed -i '' 's/^ *//' ~/.gradle/gradle.properties
           echo "== new =="; cat ~/.gradle/gradle.properties
@@ -69,7 +68,7 @@ workflows:
           set -euo pipefail
           export NUVIO_IOS_DISTRIBUTION=appstore
           ./gradlew --stacktrace \
-            "-Dorg.gradle.jvmargs=-Xmx6656M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC" \
+            "-Dorg.gradle.jvmargs=-Xmx10240M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC" \
             :composeApp:linkReleaseFrameworkIosArm64
       - name: Build unsigned appstore IPA
         script: |
