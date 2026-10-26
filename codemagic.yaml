@@ -1,0 +1,54 @@
+# ShlomoTech build of Nuvio Enhanced for iOS (unsigned "full" IPA, same as upstream releases).
+# Signing + GCM patch + TestFlight upload happen off-CI via ~/nuvio-secrets/tools.
+workflows:
+  ios-enhanced-unsigned:
+    name: iOS Enhanced unsigned IPA
+    max_build_duration: 120
+    instance_type: mac_mini_m4
+    environment:
+      xcode: 27.1
+      java: 17
+      groups:
+        - nuvio_enh
+    cache:
+      cache_paths:
+        - ~/.konan
+        - ~/.gradle/caches
+        - ~/.gradle/wrapper
+    triggering:
+      events: []
+    scripts:
+      - name: Toolchain
+        script: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          java -version
+          echo "RAM bytes: $(sysctl -n hw.memsize)  CPUs: $(sysctl -n hw.ncpu)"
+      - name: Runtime properties
+        script: |
+          printf '%s' "$ENH_LOCAL_PROPERTIES_B64" | base64 --decode > local.properties
+          echo "local.properties keys:"; cut -d= -f1 local.properties
+      - name: Gradle memory (16GB machine; upstream CI uses 9GB for Kotlin/Native)
+        script: |
+          mkdir -p ~/.gradle
+          {
+            echo "org.gradle.jvmargs=-Xmx2048M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M -XX:+UseG1GC"
+            echo "kotlin.daemon.jvmargs=-Xmx1024M"
+            echo "kotlin.native.jvmArgs=-Xmx11264M -XX:+UseG1GC"
+            echo "org.gradle.parallel=false"
+            echo "org.gradle.workers.max=1"
+            echo "kotlin.native.disableCompilerDaemon=true"
+          } >> ~/.gradle/gradle.properties
+          cat ~/.gradle/gradle.properties
+      - name: iOS dependencies
+        script: ./scripts/prepare-ios-dependencies.sh
+      - name: Build unsigned full Release IPA
+        script: |
+          set -o pipefail
+          export IOS_CONFIGURATION=Release
+          ./scripts/build-ios-ipa.sh 0.6.4 2>&1 | tee build-ios.log | grep -E "error:|warning: .*MPVSubtitleRtlFix|BUILD (SUCCEEDED|FAILED)|Created |FAILURE|What went wrong|^e: " || true
+          test "${PIPESTATUS[0]}" -eq 0
+          ls -la build/ios-ipa
+    artifacts:
+      - build/ios-ipa/*.ipa
+      - build-ios.log
