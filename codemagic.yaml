@@ -21,8 +21,18 @@ workflows:
         - $HOME/.konan
         - $HOME/.gradle/caches
     scripts:
-      - name: Toolchain
+      - name: Toolchain (prefer Xcode 27.x; upstream builds with 27.1)
         script: |
+          #!/usr/bin/env bash
+          ls -d /Applications/Xcode*.app || true
+          X=$(ls -d /Applications/Xcode-27*.app /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -n "$X" ]; then
+            echo "Using $X"
+            echo "DEVELOPER_DIR=$X/Contents/Developer" >> "$CM_ENV"
+            export DEVELOPER_DIR="$X/Contents/Developer"
+          else
+            echo "No Xcode 27 on this image; staying on default"
+          fi
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
           java -version
@@ -38,17 +48,35 @@ workflows:
           #!/usr/bin/env bash
           set -euo pipefail
           git submodule update --init --depth 1 MPVKit
-      - name: Build unsigned appstore IPA
+      - name: Kotlin framework (Gradle, full output)
         script: |
           #!/usr/bin/env bash
           set -euo pipefail
+          export NUVIO_IOS_DISTRIBUTION=appstore
+          ./gradlew --no-daemon --stacktrace \
+            "-Porg.gradle.jvmargs=-Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M" \
+            "-Pkotlin.native.jvmArgs=-Xmx4608M" \
+            :composeApp:linkReleaseFrameworkIosArm64
+      - name: Build unsigned appstore IPA
+        script: |
+          #!/usr/bin/env bash
+          set -uo pipefail
           DD="$CM_BUILD_DIR/build/dd"
+          mkdir -p "$CM_BUILD_DIR/out"; LOG="$CM_BUILD_DIR/out/xcodebuild.log"
           env NUVIO_IOS_DISTRIBUTION=appstore \
             "ORG_GRADLE_PROJECT_org.gradle.jvmargs=-Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M" \
             "ORG_GRADLE_PROJECT_kotlin.native.jvmArgs=-Xmx4608M" \
             xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release \
               -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
-              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build | tail -n 200
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build > "$LOG" 2>&1
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "xcodebuild failed ($RC). Errors:"
+            grep -n -E "error:|^e: |What went wrong|FAILURE|Exception|BUILD FAILED" "$LOG" | head -n 80
+            echo "---- tail ----"; tail -n 60 "$LOG"
+            exit $RC
+          fi
+          tail -n 20 "$LOG"
           APP="$DD/Build/Products/Release-iphoneos/Nuvio.app"
           [ -d "$APP" ] || { echo "no app produced"; exit 1; }
           [ -d "$APP/PlugIns/DownloadsWidgetExtension.appex" ] || echo "WARN: no widget"
@@ -59,3 +87,4 @@ workflows:
           ls -la "$CM_BUILD_DIR/out"; shasum -a 256 "$CM_BUILD_DIR/out/nuvio-appstore-unsigned.ipa"
     artifacts:
       - $CM_BUILD_DIR/out/*.ipa
+      - $CM_BUILD_DIR/out/xcodebuild.log
