@@ -1,0 +1,59 @@
+# ShlomoTech: unsigned "appstore" distribution build of Nuvio for iOS.
+# Signing + App Store Connect upload are done off-CI (rcodesign + ASC API) with com.shlomotech.nuvio profiles.
+# Manual trigger only (free tier minutes).
+workflows:
+  ios-appstore-unsigned:
+    name: iOS appstore (unsigned IPA)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      xcode: latest
+      java: 17
+      vars:
+        IOS_CONFIGURATION: Release
+        NUVIO_IOS_DISTRIBUTION: appstore
+        GRADLE_OPTS: -Dfile.encoding=UTF-8
+        KOTLIN_DAEMON_JVMARGS: -Xmx2048M
+    cache:
+      cache_paths:
+        - $HOME/.konan
+        - $HOME/.gradle/caches
+    scripts:
+      - name: Toolchain
+        script: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          java -version
+      - name: Runtime properties
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          [ -n "${NUVIO_LOCAL_PROPERTIES_B64:-}" ] || { echo "NUVIO_LOCAL_PROPERTIES_B64 missing"; exit 1; }
+          printf '%s' "$NUVIO_LOCAL_PROPERTIES_B64" | base64 --decode > local.properties
+          echo "local.properties keys:"; cut -d= -f1 local.properties
+      - name: iOS dependencies (MPVKit submodule)
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          git submodule update --init --depth 1 MPVKit
+      - name: Build unsigned appstore IPA
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          DD="$CM_BUILD_DIR/build/dd"
+          env NUVIO_IOS_DISTRIBUTION=appstore \
+            "ORG_GRADLE_PROJECT_org.gradle.jvmargs=-Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M" \
+            "ORG_GRADLE_PROJECT_kotlin.native.jvmArgs=-Xmx4608M" \
+            xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release \
+              -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build | tail -n 200
+          APP="$DD/Build/Products/Release-iphoneos/Nuvio.app"
+          [ -d "$APP" ] || { echo "no app produced"; exit 1; }
+          [ -d "$APP/PlugIns/DownloadsWidgetExtension.appex" ] || echo "WARN: no widget"
+          if nm -u "$APP/Nuvio" 2>/dev/null | grep -q CCCryptorGCM; then echo "CCCryptorGCM still referenced"; exit 1; fi
+          mkdir -p "$CM_BUILD_DIR/out/Payload"
+          ditto "$APP" "$CM_BUILD_DIR/out/Payload/Nuvio.app"
+          (cd "$CM_BUILD_DIR/out" && /usr/bin/zip -qry nuvio-appstore-unsigned.ipa Payload)
+          ls -la "$CM_BUILD_DIR/out"; shasum -a 256 "$CM_BUILD_DIR/out/nuvio-appstore-unsigned.ipa"
+    artifacts:
+      - $CM_BUILD_DIR/out/*.ipa
