@@ -9,6 +9,8 @@ workflows:
     environment:
       xcode: latest
       java: 17
+      groups:
+        - nuvio
       vars:
         IOS_CONFIGURATION: Release
         NUVIO_IOS_DISTRIBUTION: appstore
