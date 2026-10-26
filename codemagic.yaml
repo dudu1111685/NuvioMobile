@@ -4,9 +4,9 @@ workflows:
   ios-enhanced-unsigned:
     name: iOS Enhanced unsigned IPA
     max_build_duration: 120
-    instance_type: mac_mini_m4
+    instance_type: mac_mini_m2
     environment:
-      xcode: 27.1
+      xcode: latest
       java: 17
       groups:
         - nuvio_enh
