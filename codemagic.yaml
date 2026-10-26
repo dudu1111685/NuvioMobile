@@ -36,6 +36,21 @@ workflows:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
           java -version
+          echo "RAM bytes: $(sysctl -n hw.memsize)  CPUs: $(sysctl -n hw.ncpu)"
+          echo "== existing ~/.gradle/gradle.properties =="; cat ~/.gradle/gradle.properties 2>/dev/null || true
+          # Gradle user-home properties override the project's; Codemagic's image caps the heap at 3g.
+          # Kotlin/Native release linking runs in the Gradle daemon and needs much more.
+          mkdir -p ~/.gradle
+          cat > ~/.gradle/gradle.properties <<'EOP'
+          org.gradle.jvmargs=-Xmx6656M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC
+          kotlin.daemon.jvmargs=-Xmx1024M
+          kotlin.native.jvmArgs=-Xmx6656M
+          org.gradle.workers.max=2
+          org.gradle.parallel=false
+          kotlin.native.cacheKind=none
+          EOP
+          sed -i '' 's/^ *//' ~/.gradle/gradle.properties
+          echo "== new =="; cat ~/.gradle/gradle.properties
       - name: Runtime properties
         script: |
           #!/usr/bin/env bash
@@ -53,9 +68,8 @@ workflows:
           #!/usr/bin/env bash
           set -euo pipefail
           export NUVIO_IOS_DISTRIBUTION=appstore
-          ./gradlew --no-daemon --stacktrace \
-            "-Porg.gradle.jvmargs=-Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M" \
-            "-Pkotlin.native.jvmArgs=-Xmx4608M" \
+          ./gradlew --stacktrace \
+            "-Dorg.gradle.jvmargs=-Xmx6656M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC" \
             :composeApp:linkReleaseFrameworkIosArm64
       - name: Build unsigned appstore IPA
         script: |
@@ -64,8 +78,6 @@ workflows:
           DD="$CM_BUILD_DIR/build/dd"
           mkdir -p "$CM_BUILD_DIR/out"; LOG="$CM_BUILD_DIR/out/xcodebuild.log"
           env NUVIO_IOS_DISTRIBUTION=appstore \
-            "ORG_GRADLE_PROJECT_org.gradle.jvmargs=-Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M" \
-            "ORG_GRADLE_PROJECT_kotlin.native.jvmArgs=-Xmx4608M" \
             xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release \
               -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
               CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build > "$LOG" 2>&1
