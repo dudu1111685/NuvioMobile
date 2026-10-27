@@ -100,12 +100,14 @@ final class RootComposeViewController: UIViewController {
         ])
         self.leadingConstraint = leadingConstraint
         self.trailingConstraint = trailingConstraint
+#if NUVIO_IOS27_SDK
         if #available(iOS 27.1, *) {
             registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) {
                 (controller: RootComposeViewController, _: UITraitCollection) in
                 controller.updateVerticalBar()
             }
         }
+#endif
         contentController.didMove(toParent: self)
 
         immersiveSystemUIObserver = NotificationCenter.default.addObserver(
@@ -138,6 +140,7 @@ final class RootComposeViewController: UIViewController {
         }
     }
 
+#if NUVIO_IOS27_SDK
     private var verticalBarInsets: NSDirectionalEdgeInsets {
         guard #available(iOS 27.1, *) else { return .zero }
         let insets = view.safeAreaInsets
@@ -151,6 +154,9 @@ final class RootComposeViewController: UIViewController {
             return .zero
         }
     }
+#else
+    private var verticalBarInsets: NSDirectionalEdgeInsets { .zero }
+#endif
 
     override var childForHomeIndicatorAutoHidden: UIViewController? {
         nil
@@ -1471,6 +1477,7 @@ private struct DetailDestinationView: View {
 }
 
 private extension View {
+#if NUVIO_IOS27_SDK
     @ViewBuilder
     func verticalBarDisabled(_ disabled: Bool) -> some View {
         if #available(iOS 27.1, *), disabled {
@@ -1479,6 +1486,9 @@ private extension View {
             self
         }
     }
+#else
+    func verticalBarDisabled(_ disabled: Bool) -> some View { self }
+#endif
 }
 
 @available(iOS 26.0, *)
